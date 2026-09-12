@@ -1,3 +1,4 @@
+
 """
 Streamlit chat UI for the AWS Knowledge Assistant.
 
@@ -17,7 +18,7 @@ import streamlit as st
 # Configuration
 # -------------------------------------------------------------------
 
-API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000").rstrip("/")
 API_URL = f"{API_BASE_URL}/query"
 API_KEY = os.getenv("API_KEY", "")
 
@@ -79,7 +80,11 @@ st.markdown(
             padding-bottom: 6rem;
         }
 
-        body, [data-testid="stMarkdownContainer"], p, span, label {
+        body,
+        [data-testid="stMarkdownContainer"],
+        p,
+        span,
+        label {
             color: var(--text-primary);
         }
 
@@ -196,6 +201,7 @@ st.markdown(
             border: 1px solid var(--border);
             border-radius: 0.8rem;
             padding: 0.4rem 0.2rem;
+            margin-bottom: 0.5rem;
         }
 
         /* Buttons */
@@ -211,7 +217,7 @@ st.markdown(
             color: var(--aws-orange);
         }
 
-        /* Suggestion buttons get a touch more presence */
+        /* Suggestion buttons */
         div[data-testid="stVerticalBlock"] .stButton > button {
             text-align: left;
             justify-content: flex-start;
@@ -227,18 +233,11 @@ st.markdown(
 # -------------------------------------------------------------------
 
 def start_new_conversation():
-    """Reset chat history AND the backend thread_id.
-
-    Resetting only st.session_state.messages (without a new
-    thread_id) left the UI looking empty while the backend's
-    LangGraph checkpointer kept the old conversation alive under the
-    same thread_id -- the "new" conversation would silently inherit
-    the previous one's history on the very first message.
-    """
-
+    """Reset the frontend and backend conversation state."""
     st.session_state.messages = []
     st.session_state.request_count = 0
     st.session_state.thread_id = str(uuid.uuid4())
+    st.session_state.pending_question = None
 
 
 def render_sources(sources):
@@ -338,6 +337,7 @@ def ask_backend(question: str) -> tuple[dict, float]:
             headers={"X-API-Key": API_KEY},
             timeout=60,
         )
+
         response.raise_for_status()
         data = response.json()
 
@@ -364,7 +364,12 @@ def ask_backend(question: str) -> tuple[dict, float]:
             )
             answer = f"The backend returned an error (HTTP {status})."
 
-        data = {"answer": answer, "sources": [], "steps": [], "blocked": False}
+        data = {
+            "answer": answer,
+            "sources": [],
+            "steps": [],
+            "blocked": False,
+        }
 
     except requests.exceptions.RequestException as error:
         data = {
@@ -405,19 +410,28 @@ def render_assistant_reply(data: dict, latency: float):
 
 
 def handle_question(question: str):
+    """Send a question, store the complete exchange, then rerun."""
+
+    question = question.strip()
+
+    if not question:
+        return
+
     st.session_state.request_count += 1
 
-    st.session_state.messages.append({"role": "user", "content": question})
+    # Store user message first.
+    st.session_state.messages.append(
+        {
+            "role": "user",
+            "content": question,
+        }
+    )
 
-    with st.chat_message("user"):
-        st.markdown(question)
+    # Call backend.
+    with st.spinner("Searching AWS knowledge base..."):
+        data, latency = ask_backend(question)
 
-    with st.chat_message("assistant"):
-        with st.spinner("Searching AWS knowledge base..."):
-            data, latency = ask_backend(question)
-
-        render_assistant_reply(data, latency)
-
+    # Store assistant response.
     st.session_state.messages.append(
         {
             "role": "assistant",
@@ -499,7 +513,9 @@ with st.sidebar:
 st.markdown(
     """
     <div class="app-header">
-        <div class="app-title">AWS <span class="accent">Knowledge</span> Assistant</div>
+        <div class="app-title">
+            AWS <span class="accent">Knowledge</span> Assistant
+        </div>
         <div class="app-subtitle">
             AWS case studies & technical knowledge, powered by RAG
         </div>
@@ -507,6 +523,11 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+
+# -------------------------------------------------------------------
+# Welcome
+# -------------------------------------------------------------------
 
 render_welcome()
 
@@ -532,6 +553,7 @@ for message in st.session_state.messages:
             render_steps(message.get("steps", []))
 
             latency = message.get("latency")
+
             if latency is not None:
                 st.caption(f"⚡ Response time: {latency:.2f}s")
 
@@ -540,13 +562,30 @@ for message in st.session_state.messages:
 # Chat input
 # -------------------------------------------------------------------
 
-# A clicked suggestion button takes priority over new typed input --
-# both can't happen in the same run, but this keeps the order explicit.
-if st.session_state.pending_question:
-    question = st.session_state.pending_question
+# Always render the chat input.
+# This prevents the input box from disappearing when a suggestion
+# button is clicked.
+typed_question = st.chat_input(
+    "Ask a question about AWS case studies..."
+)
+
+
+# -------------------------------------------------------------------
+# Question handling
+# -------------------------------------------------------------------
+
+pending_question = st.session_state.pending_question
+
+if pending_question:
     st.session_state.pending_question = None
-else:
-    question = st.chat_input("Ask a question about AWS case studies...")
+
+# A clicked suggestion gets priority over typed input.
+question = pending_question or typed_question
 
 if question:
     handle_question(question)
+
+    # Rerun once so the newly stored messages are rendered
+    # through the normal chat-history section.
+    st.rerun()
+
