@@ -10,6 +10,13 @@ acceptable here because it's only used as an occasional fallback
 when local retrieval comes up empty, not on the hot path of every
 request. A high-traffic deployment would want a long-lived
 session instead -- see the note in aws_docs_fallback_node.
+
+Requires the `uv`/`uvx` CLI on PATH -- not just the `mcp` Python
+package. The Dockerfile installs it; a local dev environment running
+`uvicorn` directly needs it installed separately (`pip install uv` or
+https://docs.astral.sh/uv/getting-started/installation/). If it's
+missing, spawning the subprocess raises FileNotFoundError, which
+surfaces through the exceptions below like any other MCP failure.
 """
 
 import asyncio
@@ -19,6 +26,14 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from app.config import settings
+
+
+# Per-call ceiling on the whole MCP round trip (subprocess spawn +
+# handshake + tool call). Without this, a hung `uvx` process (slow
+# package resolution, a stalled network call inside the MCP server)
+# blocks the request indefinitely instead of failing fast into the
+# "no results" fallback path.
+_MCP_CALL_TIMEOUT_SECONDS = 20
 
 
 def _server_params() -> StdioServerParameters:
@@ -110,12 +125,27 @@ def search_aws_docs(search_phrase: str, limit: int = 3) -> list[dict]:
     list on any failure -- callers should treat "no results" and
     "the tool failed" the same way (fall back to an honest
     "not found" answer).
+
+    Raises on failure (timeout, missing `uvx`, MCP protocol error)
+    instead of swallowing it -- the caller (aws_docs_fallback_node)
+    decides how to log/handle that; hiding it here would make every
+    failure mode look identical to "AWS docs genuinely had nothing".
     """
 
-    return asyncio.run(_search_documentation_async(search_phrase, limit))
+    return asyncio.run(
+        asyncio.wait_for(
+            _search_documentation_async(search_phrase, limit),
+            timeout=_MCP_CALL_TIMEOUT_SECONDS,
+        )
+    )
 
 
 def read_aws_doc(url: str) -> str:
     """Fetch a specific AWS documentation page as markdown."""
 
-    return asyncio.run(_read_documentation_async(url))
+    return asyncio.run(
+        asyncio.wait_for(
+            _read_documentation_async(url),
+            timeout=_MCP_CALL_TIMEOUT_SECONDS,
+        )
+    )
