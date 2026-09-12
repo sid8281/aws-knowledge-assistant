@@ -421,7 +421,9 @@ def render_assistant_message(message: dict):
 
 
 def handle_question(question: str):
-    """Send a question, store the complete exchange, then rerun."""
+    """Send a question, showing the user bubble immediately and the
+    assistant bubble as soon as the backend responds, instead of
+    waiting for the whole round-trip before anything renders."""
 
     question = question.strip()
 
@@ -430,21 +432,17 @@ def handle_question(question: str):
 
     st.session_state.request_count += 1
 
-    # Store user message first.
-    st.session_state.messages.append(
-        {
-            "role": "user",
-            "content": question,
-        }
-    )
+    user_message = {"role": "user", "content": question}
+    st.session_state.messages.append(user_message)
 
-    # Call backend.
-    with st.spinner("Searching AWS knowledge base..."):
-        data, latency = ask_backend(question)
+    with st.chat_message("user"):
+        st.markdown(question)
 
-    # Store assistant response.
-    st.session_state.messages.append(
-        {
+    with st.chat_message("assistant"):
+        with st.spinner("Searching AWS knowledge base..."):
+            data, latency = ask_backend(question)
+
+        assistant_message = {
             "role": "assistant",
             "content": data.get("answer", "No answer returned."),
             "sources": data.get("sources", []),
@@ -452,7 +450,10 @@ def handle_question(question: str):
             "blocked": data.get("blocked", False),
             "latency": latency,
         }
-    )
+
+        render_assistant_message(assistant_message)
+
+    st.session_state.messages.append(assistant_message)
 
 
 # -------------------------------------------------------------------
@@ -587,4 +588,3 @@ if question:
     # Rerun once so the newly stored messages are rendered
     # through the normal chat-history section.
     st.rerun()
-
