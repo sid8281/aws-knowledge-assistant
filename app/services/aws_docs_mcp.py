@@ -21,7 +21,8 @@ surfaces through the exceptions below like any other MCP failure.
 
 import asyncio
 import json
-
+import os
+import shutil
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -37,13 +38,29 @@ _MCP_CALL_TIMEOUT_SECONDS = 20
 
 
 def _server_params() -> StdioServerParameters:
+    uvx_path = shutil.which("uvx")
+
+    if not uvx_path:
+        fallback_path = "/home/ubuntu/.local/bin/uvx"
+
+        if os.path.exists(fallback_path):
+            uvx_path = fallback_path
+        else:
+            raise FileNotFoundError(
+                "uvx was not found in PATH or /home/ubuntu/.local/bin/uvx"
+            )
+
+    env = os.environ.copy()
+
+    env.update({
+        "FASTMCP_LOG_LEVEL": "ERROR",
+        "AWS_DOCUMENTATION_PARTITION": settings.AWS_DOCS_PARTITION,
+    })
+
     return StdioServerParameters(
-        command="uvx",
+        command=uvx_path,
         args=["awslabs.aws-documentation-mcp-server@latest"],
-        env={
-            "FASTMCP_LOG_LEVEL": "ERROR",
-            "AWS_DOCUMENTATION_PARTITION": settings.AWS_DOCS_PARTITION,
-        },
+        env=env,
     )
 
 
