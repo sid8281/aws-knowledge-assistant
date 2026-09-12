@@ -1,4 +1,3 @@
-
 """
 Streamlit chat UI for the AWS Knowledge Assistant.
 
@@ -6,6 +5,7 @@ Run:
     streamlit run ui/streamlit_app.py
 """
 
+import html
 import os
 import time
 import uuid
@@ -250,7 +250,7 @@ def render_sources(sources):
                 f"""
                 <div class="source-card">
                     <div class="source-title">📄 Source {index}</div>
-                    <div class="source-path">{source}</div>
+                    <div class="source-path">{html.escape(str(source))}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -267,7 +267,8 @@ def render_steps(steps):
         pipeline_html = '<div class="pipeline">'
 
         for index, node in enumerate(nodes):
-            pipeline_html += f'<span class="pipeline-node">{node}</span>'
+            safe_node = html.escape(str(node))
+            pipeline_html += f'<span class="pipeline-node">{safe_node}</span>'
 
             if index < len(nodes) - 1:
                 pipeline_html += '<span class="pipeline-arrow">→</span>'
@@ -285,7 +286,7 @@ def render_steps(steps):
 
 
 def render_welcome():
-    if st.session_state.messages:
+    if st.session_state.messages or st.session_state.pending_question:
         return
 
     st.markdown(
@@ -319,7 +320,6 @@ def render_welcome():
                 use_container_width=True,
             ):
                 st.session_state.pending_question = suggestion
-                st.rerun()
 
 
 def ask_backend(question: str) -> tuple[dict, float]:
@@ -392,21 +392,32 @@ def ask_backend(question: str) -> tuple[dict, float]:
     return data, latency
 
 
-def render_assistant_reply(data: dict, latency: float):
-    answer = data.get("answer", "No answer returned.")
-    blocked = data.get("blocked", False)
+def render_assistant_message(message: dict):
+    """Render one assistant message from session_state.messages.
 
-    if blocked:
+    This is the single place that knows how to draw an assistant
+    reply (answer/blocked banner + sources + steps + latency) so the
+    chat-history loop below never has its own separate copy of this
+    logic to drift out of sync with.
+    """
+
+    answer = message.get("content", "No answer returned.")
+
+    if message.get("blocked"):
         st.markdown(
-            f'<div class="blocked-banner">🛡️ {answer}</div>',
+            f'<div class="blocked-banner">🛡️ {html.escape(str(answer))}</div>',
             unsafe_allow_html=True,
         )
     else:
         st.markdown(answer)
 
-    render_sources(data.get("sources", []))
-    render_steps(data.get("steps", []))
-    st.caption(f"⚡ Response time: {latency:.2f}s")
+    render_sources(message.get("sources", []))
+    render_steps(message.get("steps", []))
+
+    latency = message.get("latency")
+
+    if latency is not None:
+        st.caption(f"⚡ Response time: {latency:.2f}s")
 
 
 def handle_question(question: str):
@@ -540,22 +551,10 @@ for message in st.session_state.messages:
     role = message["role"]
 
     with st.chat_message(role):
-        if role == "assistant" and message.get("blocked"):
-            st.markdown(
-                f'<div class="blocked-banner">🛡️ {message["content"]}</div>',
-                unsafe_allow_html=True,
-            )
+        if role == "assistant":
+            render_assistant_message(message)
         else:
             st.markdown(message["content"])
-
-        if role == "assistant":
-            render_sources(message.get("sources", []))
-            render_steps(message.get("steps", []))
-
-            latency = message.get("latency")
-
-            if latency is not None:
-                st.caption(f"⚡ Response time: {latency:.2f}s")
 
 
 # -------------------------------------------------------------------
