@@ -10,13 +10,21 @@ queries the live AWS Documentation MCP server
 (https://github.com/awslabs/mcp) and, if it finds anything, feeds
 those results into the responder like any other retrieved chunk.
 
+Search results only carry a short snippet, not the page's actual
+content -- nowhere near enough for anything beyond a one-line
+factoid question. For each hit we also fetch the full page via
+`read_documentation` and use that as the chunk text, falling back to
+the snippet only if that specific fetch fails, so one bad page
+doesn't drop an otherwise-good source.
+
 If AWS_DOCS_MCP_ENABLED is off, or the MCP call fails or returns
 nothing, this is a no-op and the responder falls through to its
 existing "couldn't find relevant information" answer -- unchanged
 from before this fallback existed.
 
-Note on cost: each call here currently spawns a fresh `uvx` subprocess
-(see app/services/aws_docs_mcp.py). That's fine for occasional
+Note on cost: each call here spawns a fresh `uvx` subprocess per MCP
+tool call (see app/services/aws_docs_mcp.py) -- one for the search,
+plus one more per result page read. That's fine for occasional
 fallback use; a high-QPS deployment would want to hold one
 long-lived MCP session open instead of reconnecting per request.
 """
@@ -24,7 +32,39 @@ long-lived MCP session open instead of reconnecting per request.
 import logfire
 
 from app.config import settings
-from app.services.aws_docs_mcp import search_aws_docs
+from app.services.aws_docs_mcp import read_aws_doc, search_aws_docs
+
+
+# Cap on how much of each fetched page we feed into the prompt.
+# Multiple full AWS doc pages can be tens of thousands of characters
+# each; this keeps total context (across up to `limit` sources)
+# bounded while still giving the responder far more to work with
+# than a one-sentence search snippet.
+_MAX_DOC_CHARS = 6000
+
+
+def _fetch_full_text(url: str, snippet: str) -> str:
+    """Fetch the full documentation page for a search result.
+
+    Falls back to the search snippet if the read fails or comes back
+    empty, so a single bad page doesn't drop the source entirely.
+    """
+
+    try:
+        full_text = read_aws_doc(url)
+    except Exception as exc:
+        logfire.warning(
+            "Reading full AWS doc page failed, using search snippet",
+            url=url,
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        return snippet
+
+    if not full_text:
+        return snippet
+
+    return full_text[:_MAX_DOC_CHARS]
 
 
 def aws_docs_fallback_node(state: dict) -> dict:
@@ -70,15 +110,17 @@ def aws_docs_fallback_node(state: dict) -> dict:
             chunks = []
 
             for i, result in enumerate(results):
-                text = (
+                snippet = (
                     result.get("context")
                     or result.get("title")
                     or ""
                 )
                 url = result.get("url", "")
 
-                if not text or not url:
+                if not snippet or not url:
                     continue
+
+                text = _fetch_full_text(url, snippet)
 
                 chunks.append({
                     "id": f"aws-docs-{i}",
