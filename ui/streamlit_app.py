@@ -81,11 +81,22 @@ st.markdown(
         }
 
         body,
-        [data-testid="stMarkdownContainer"],
-        p,
-        span,
-        label {
-            color: var(--text-primary);
+        
+        /* Fix code blocks */
+        [data-testid="stCode"],
+        [data-testid="stCode"] pre,
+        [data-testid="stCode"] code {
+        background-color: #161b22 !important;
+        color: #e6edf3 !important;
+        }
+
+        [data-testid="stCode"] pre {
+        border: 1px solid #2d333b !important;
+        border-radius: 0.6rem !important;
+        }
+
+        [data-testid="stCode"] code {
+        color: #e6edf3 !important;
         }
 
         /* Header */
