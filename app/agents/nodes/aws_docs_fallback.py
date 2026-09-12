@@ -42,8 +42,28 @@ def aws_docs_fallback_node(state: dict) -> dict:
         try:
             results = search_aws_docs(query, limit=3)
         except Exception as exc:
-            logfire.error("AWS Docs MCP fallback failed", error=str(exc))
+            # Log with a full traceback (not just str(exc)) so the
+            # actual cause -- missing `uvx` on PATH, a timeout, a
+            # changed MCP response shape, a network failure -- shows
+            # up in the logs instead of being indistinguishable from
+            # "AWS docs genuinely had nothing for this query".
+            logfire.exception(
+                "AWS Docs MCP fallback failed",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
             results = []
+
+            state["steps"] = state.get("steps", []) + [
+                {
+                    "node": "aws_docs_fallback",
+                    "output": (
+                        f"MCP call failed: {type(exc).__name__}: {exc}"
+                    ),
+                }
+            ]
+
+            return state
 
         if results:
 
