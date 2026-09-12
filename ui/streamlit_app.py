@@ -80,23 +80,23 @@ st.markdown(
             padding-bottom: 6rem;
         }
 
-        body,
-        
-        /* Fix code blocks */
-        [data-testid="stCode"],
-        [data-testid="stCode"] pre,
-        [data-testid="stCode"] code {
-        background-color: #161b22 !important;
-        color: #e6edf3 !important;
+        body {
+        color: var(--text-primary);
         }
 
+        [data-testid="stMarkdownContainer"] {
+        color: var(--text-primary);
+        }
+
+        /* Code blocks */
         [data-testid="stCode"] pre {
-        border: 1px solid #2d333b !important;
+        background-color: var(--bg-panel) !important;
+        border: 1px solid var(--border) !important;
         border-radius: 0.6rem !important;
         }
 
         [data-testid="stCode"] code {
-        color: #e6edf3 !important;
+        background-color: transparent !important;
         }
 
         /* Header */
