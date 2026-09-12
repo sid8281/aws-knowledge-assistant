@@ -1,0 +1,43 @@
+# Environment / secrets
+.env
+.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Build / packaging
+build/
+dist/
+wheels/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# Local tool state
+.deepeval/
+.logfire/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Large raw datasets
+DATA/
+*.zip
+processed_data/
+# Local models
+models/
+*.bin
+*.safetensors
+*.pt
+*.pth

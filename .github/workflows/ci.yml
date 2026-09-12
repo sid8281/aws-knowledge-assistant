@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-groups
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Run tests
+        env:
+          # Tests mock all external calls (LLM, Qdrant, guardrails) —
+          # these are dummy values only so settings.py doesn't error
+          # on missing env vars, no real credentials are used in CI.
+          API_KEY: test-key
+          PORTKEY_API_KEY: test
+          PORTKEY_VIRTUAL_KEY_PRIMARY: test
+          PORTKEY_VIRTUAL_KEY_FALLBACK: test
+          QDRANT_URL: http://localhost:6333
+        run: uv run pytest -v
+
+  build-image:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t aws-knowledge-assistant:${{ github.sha }} .

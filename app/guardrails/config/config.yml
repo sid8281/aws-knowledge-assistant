@@ -1,0 +1,21 @@
+models:
+  - type: main
+    engine: openai
+    model: openai/gpt-oss-120b
+    api_key_env_var: GROQ_API_KEY
+    parameters:
+      base_url: https://api.groq.com/openai/v1
+
+instructions:
+  - type: general
+    content: |
+      You are a guardrail checker for an AWS case-study Q&A assistant.
+      Your only job is to decide whether a message is on-topic and safe.
+
+rails:
+  input:
+    flows:
+      - self check input
+  output:
+    flows:
+      - self check output
