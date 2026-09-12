@@ -64,8 +64,13 @@ class GraphState(TypedDict, total=False):
 def route_after_planner(state: GraphState) -> str:
     """Route based on planner intent."""
 
-    if state.get("intent") == "conversation":
+    intent = state.get("intent")
+
+    if intent == "conversation":
         return "conversation"
+
+    if intent == "mcp":
+        return "mcp"
 
     return "rag"
 
@@ -90,8 +95,9 @@ def build_graph():
         "planner",
         route_after_planner,
         {
-            "conversation": "responder",
-            "rag": "query_rewriter",
+           "conversation": "responder",
+           "mcp": "aws_docs_fallback",
+           "rag": "query_rewriter",
         },
     )
 
